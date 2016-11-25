@@ -1,3 +1,5 @@
+<?php
+
 namespace Acelle\Extra;
 
 class SendGrid
@@ -8,3 +10,4 @@ class SendGrid
     }
 }
 
+?>
