@@ -4,56 +4,91 @@ namespace Acelle\Extra;
 
 class SendGrid
 {
-    const SENDGRID_BASE_URI = 'https://api.sendgrid.com/v3/';
+    const API_ENDPOINT = 'https://api.sendgrid.com/v3/';
 
     protected $client;
-    protected $module;
 
-    public function __construct($username, $password) 
+    public function __construct($auth)
     {
-        $this->client = new \GuzzleHttp\Client(['base_uri' => self::SENDGRID_BASE_URI, 'auth' => [$username, $password]]);
+        $params = [
+            'base_uri' => self::API_ENDPOINT,
+            'headers' => [
+                'Content-Type' => 'application/json',
+            ]
+        ];
+
+        if (array_key_exists('api', $auth)) {
+            $params['headers']['Authorization'] =  "Bearer {$auth['api']}";
+        } else {
+            $params['auth'] = [ $auth['username'], $auth['password']];
+        }
+
+        $this->client = new \GuzzleHttp\Client($params);
     }
 
-    private function getClient()
+    public function getClient()
     {
         return $this->client;
     }
 
-    public function subusers()
+    public function getAllIps()
     {
-        $this->module = 'subusers';
-        return $this;
+        $ips = $this->request('GET', 'ips');
+        $ips = array_map(function($ip) {
+            return $ip['ip'];
+        }, $ips);
+        return $ips;
     }
 
-    public function ips()
+    public function request($method, $module, $params = [])
     {
-        $this->module = 'ips';
-        return $this;
-    }
-
-    public function api_keys()
-    {
-        $this->module = 'api_keys';
-        return $this;
-    }
-
-    public function request($method, $params = [])
-    {
-        if (is_null($this->module)) {
-            throw new \Exception('method not allowed');
+        if ($method == 'GET') {
+            $uri = $module . "?" . http_build_query($params);
+            $data = [];
+        } else {
+            $uri = $module;
+            $data = ['json' => $params];
         }
-        $response = $this->getClient()->request($method, $this->module, ['json' => $params ]);
-        return $response;
+        $response = $this->getClient()->request($method, $uri, $data);
+        return json_decode($response->getBody()->read(1024 * 1024), true);
     }
 
     public function delete($subuser_name)
     {
-        if ($this->module == 'subusers') {
-            $this->getClient()->request('DELETE', 'subusers/' . urlencode($subuser_name));
-        } else {
-            throw new \Exception('method not allowed');
-        }
+        $this->request('DELETE', 'subusers/' . urlencode($subuser_name));
+    }
+
+    public function createSubUser($params)
+    {
+        $params['ips'] = $this->getAllIps();
+        $this->request('POST', 'subusers', $params);
+    }
+
+    public function subUserExists($username)
+    {
+        return !empty($this->request('GET', 'subusers', ['username' => $username]));
+    }
+
+    public function createApiKey($params)
+    {
+        $response = $this->request('POST', 'api_keys', [
+            'name' => $params['name'],
+            'scopes' => [
+                'user.webhooks.event.settings.read',
+                'user.webhooks.event.settings.update',
+                'user.webhooks.parse.settings.create',
+                'user.webhooks.parse.settings.delete',
+                'user.webhooks.parse.settings.read',
+                'user.webhooks.parse.settings.update',
+                'user.webhooks.parse.stats.read',
+                'mail.batch.create',
+                'mail.batch.delete',
+                'mail.batch.read',
+                'mail.batch.update',
+                'mail.send',
+            ]
+        ]);
+
+        return $response;
     }
 }
-
-?>
